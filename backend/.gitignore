@@ -1,0 +1,82 @@
+# ==============================
+# Node.js
+# ==============================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Dependency directories
+jspm_packages/
+bower_components/
+
+# ==============================
+# Environment files
+# ==============================
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.production.local
+!.env.example   # keep an example env for reference
+
+# ==============================
+# Logs
+# ==============================
+logs/
+*.log
+*.out
+*.pid
+*.seed
+*.pid.lock
+debug.log
+
+# ==============================
+# Coverage & Testing
+# ==============================
+coverage/
+.nyc_output/
+lib-cov/
+jest-html-reporters-*
+jest-stare/
+
+# ==============================
+# Build output
+# ==============================
+dist/
+build/
+.tmp/
+.temp/
+.cache/
+
+# ==============================
+# IDE & Editor files
+# ==============================
+.idea/
+.vscode/
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+*~
+
+# ==============================
+# OS-specific
+# ==============================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ==============================
+# Miscellaneous
+# ==============================
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
