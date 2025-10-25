@@ -45,8 +45,8 @@ app.use(cors());
 app.use(express.json());
 const allowedOrigins = [
   'http://localhost:3000',
-  process.env.FRONTEND_URL,
-].filter(Boolean);
+  'https://frontend-3q0brq2h6-amtiwari9425-3482s-projects.vercel.app',  // ADD THIS
+];
 
 // JWT Secret (use environment variable in production)
 
