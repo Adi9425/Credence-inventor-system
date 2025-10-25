@@ -88,7 +88,7 @@ function Login({ onLoginSuccess }) {
         </form>
 
         <div className="login-footer">
-          <p>© 2024 Inventory Management System</p>
+          <p>© 2025 Credence Inventory System</p>
         </div>
       </div>
     </div>
