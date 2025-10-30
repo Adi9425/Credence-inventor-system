@@ -7,7 +7,7 @@ const ExcelJS = require('exceljs');
 require('dotenv').config();
 
 const MONGODB_URI = process.env.MONGODB_URI;
-const JWT_SECRET = process.env.JWT_SECRET ;
+const JWT_SECRET = process.env.JWT_SECRET;
 const PORT = process.env.PORT;
 
 const app = express();
@@ -21,12 +21,13 @@ mongoose.connect(MONGODB_URI, {
 .catch(err => console.error('MongoDB Connection Error:', err));
 
 // Models
+// Updated schema: Only name and quantity are required
 const productSchema = new mongoose.Schema({
   name: { type: String, required: true },
   quantity: { type: Number, required: true },
-  price: { type: Number, required: true },
-  company: { type: String, required: true },
-  type: { type: String, required: true },
+  price: { type: Number, required: false },  // Optional
+  company: { type: String, required: false },  // Optional
+  type: { type: String, required: false },  // Optional
   description: { type: String, default: '' }
 }, { timestamps: true });
 
@@ -34,7 +35,7 @@ const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   name: { type: String, required: true },
-  role: { type: String, default: 'user' }
+  role: { type: String, default: 'user' }  // 'admin', 'user', or 'viewer'
 }, { timestamps: true });
 
 const Product = mongoose.model('Product', productSchema);
@@ -43,14 +44,13 @@ const User = mongoose.model('User', userSchema);
 // Middleware
 app.use(cors());
 app.use(express.json());
+
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://frontend-3q0brq2h6-amtiwari9425-3482s-projects.vercel.app',  // ADD THIS
+  'https://frontend-3q0brq2h6-amtiwari9425-3482s-projects.vercel.app',
 ];
 
-// JWT Secret (use environment variable in production)
-
-// Auth Middleware
+// Auth Middleware - Verify JWT token
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -66,6 +66,25 @@ const authenticateToken = (req, res, next) => {
     req.user = user;
     next();
   });
+};
+
+// Role-based authorization middleware
+const checkRole = (allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user || !req.user.role) {
+      return res.status(403).json({ message: 'Access denied: No role found' });
+    }
+
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ 
+        message: 'Access denied: Insufficient permissions',
+        requiredRoles: allowedRoles,
+        userRole: req.user.role
+      });
+    }
+
+    next();
+  };
 };
 
 // Login Route
@@ -89,9 +108,13 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid username or password' });
     }
 
-    // Generate token
+    // Generate token with role
     const token = jwt.sign(
-      { id: user._id, username: user.username, role: user.role },
+      { 
+        id: user._id, 
+        username: user.username, 
+        role: user.role 
+      },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -116,7 +139,7 @@ app.get('/api/auth/verify', authenticateToken, (req, res) => {
   res.json({ valid: true, user: req.user });
 });
 
-// Get all products (protected)
+// Get all products (all authenticated users can view)
 app.get('/api/products', authenticateToken, async (req, res) => {
   try {
     const products = await Product.find();
@@ -127,7 +150,7 @@ app.get('/api/products', authenticateToken, async (req, res) => {
   }
 });
 
-// Get single product (protected)
+// Get single product (all authenticated users can view)
 app.get('/api/products/:id', authenticateToken, async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
@@ -141,21 +164,22 @@ app.get('/api/products/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Add new product (protected)
-app.post('/api/products', authenticateToken, async (req, res) => {
+// Add new product (only admin and user roles, NOT viewer)
+app.post('/api/products', authenticateToken, checkRole(['admin', 'user']), async (req, res) => {
   try {
     const { name, quantity, price, company, type, description } = req.body;
     
-    if (!name || !quantity || !price || !company || !type) {
-      return res.status(400).json({ message: 'All fields except description are required' });
+    // Only name and quantity are required
+    if (!name || quantity === undefined || quantity === null) {
+      return res.status(400).json({ message: 'Product name and quantity are required' });
     }
     
     const newProduct = new Product({
       name,
       quantity: parseInt(quantity),
-      price: parseFloat(price),
-      company,
-      type,
+      price: price ? parseFloat(price) : undefined,
+      company: company || undefined,
+      type: type || undefined,
       description: description || ''
     });
     
@@ -167,21 +191,36 @@ app.post('/api/products', authenticateToken, async (req, res) => {
   }
 });
 
-// Update product (protected)
-app.put('/api/products/:id', authenticateToken, async (req, res) => {
+// Update product (only admin and user roles, NOT viewer)
+app.put('/api/products/:id', authenticateToken, checkRole(['admin', 'user']), async (req, res) => {
   try {
     const { name, quantity, price, company, type, description } = req.body;
     
+    // Only name and quantity are required
+    if (!name || quantity === undefined || quantity === null) {
+      return res.status(400).json({ message: 'Product name and quantity are required' });
+    }
+    
+    const updateData = {
+      name,
+      quantity: parseInt(quantity),
+      description: description || ''
+    };
+
+    // Only add optional fields if they are provided
+    if (price !== undefined && price !== null && price !== '') {
+      updateData.price = parseFloat(price);
+    }
+    if (company !== undefined && company !== null && company !== '') {
+      updateData.company = company;
+    }
+    if (type !== undefined && type !== null && type !== '') {
+      updateData.type = type;
+    }
+    
     const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
-      {
-        name,
-        quantity: parseInt(quantity),
-        price: parseFloat(price),
-        company,
-        type,
-        description
-      },
+      updateData,
       { new: true, runValidators: true }
     );
     
@@ -196,10 +235,14 @@ app.put('/api/products/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Update quantity (protected)
-app.patch('/api/products/:id/quantity', authenticateToken, async (req, res) => {
+// Update quantity (only admin and user roles, NOT viewer)
+app.patch('/api/products/:id/quantity', authenticateToken, checkRole(['admin', 'user']), async (req, res) => {
   try {
     const { quantity } = req.body;
+    
+    if (quantity === undefined || quantity === null) {
+      return res.status(400).json({ message: 'Quantity is required' });
+    }
     
     const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
@@ -218,8 +261,8 @@ app.patch('/api/products/:id/quantity', authenticateToken, async (req, res) => {
   }
 });
 
-// Delete product (protected)
-app.delete('/api/products/:id', authenticateToken, async (req, res) => {
+// Delete product (only admin and user roles, NOT viewer)
+app.delete('/api/products/:id', authenticateToken, checkRole(['admin', 'user']), async (req, res) => {
   try {
     const deletedProduct = await Product.findByIdAndDelete(req.params.id);
     
@@ -234,7 +277,7 @@ app.delete('/api/products/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Export to Excel (protected)
+// Export to Excel (all authenticated users can export - including viewer)
 app.post('/api/export', authenticateToken, async (req, res) => {
   try {
     const { company } = req.body;
@@ -246,35 +289,49 @@ app.post('/api/export', authenticateToken, async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Products');
     
-    // Add headers
+    // Add headers (removed ID column as requested)
     worksheet.columns = [
-      { header: 'ID', key: '_id', width: 25 },
-      { header: 'Product Name', key: 'name', width: 25 },
+      { header: 'Product Name', key: 'name', width: 30 },
       { header: 'Quantity', key: 'quantity', width: 12 },
-      { header: 'Price', key: 'price', width: 12 },
+      { header: 'Price (₹)', key: 'price', width: 15 },
       { header: 'Company', key: 'company', width: 20 },
       { header: 'Product Type', key: 'type', width: 20 },
-      { header: 'Description', key: 'description', width: 35 }
+      { header: 'Description', key: 'description', width: 40 }
     ];
     
     // Style header
-    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
     worksheet.getRow(1).fill = {
       type: 'pattern',
       pattern: 'solid',
       fgColor: { argb: 'FF4472C4' }
     };
+    worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
     
-    // Add data
+    // Add data (removed ID, handle optional fields)
     productsToExport.forEach(product => {
       worksheet.addRow({
-        _id: product._id.toString(),
         name: product.name,
         quantity: product.quantity,
-        price: product.price,
-        company: product.company,
-        type: product.type,
-        description: product.description
+        price: product.price || '-',
+        company: product.company || '-',
+        type: product.type || '-',
+        description: product.description || '-'
+      });
+    });
+    
+    // Auto-fit columns and add borders
+    worksheet.eachRow((row, rowNumber) => {
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+        if (rowNumber > 1) {
+          cell.alignment = { vertical: 'middle' };
+        }
       });
     });
     
@@ -292,6 +349,18 @@ app.post('/api/export', authenticateToken, async (req, res) => {
   }
 });
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: 'Inventory API is running',
+    timestamp: new Date().toISOString()
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  console.log('✅ Role-based authorization enabled');
+  console.log('✅ Viewer role: Can only view and export');
+  console.log('✅ User/Admin roles: Full access');
 });

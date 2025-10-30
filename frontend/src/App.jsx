@@ -4,21 +4,22 @@ import './App.css';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
 
+// Define company options
+const COMPANY_OPTIONS = ['MYK laticrete', 'Somany', 'Grip Stone'];
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchCompany, setSearchCompany] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showQuantityModal, setShowQuantityModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
-  const [filteredCompanies, setFilteredCompanies] = useState([]);
+  const [quantityAdjustment, setQuantityAdjustment] = useState(0);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -28,6 +29,9 @@ function App() {
     type: '',
     description: ''
   });
+
+  // Check if user is view-only
+  const isViewOnly = user?.role === 'viewer';
 
   // Check authentication on mount
   useEffect(() => {
@@ -41,42 +45,27 @@ function App() {
     }
   }, [isAuthenticated]);
 
-  // Filter products
+  // Filter products with combined search
   useEffect(() => {
     let filtered = products;
     
     if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
       filtered = filtered.filter(p => 
-        p.name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-    
-    if (searchCompany) {
-      filtered = filtered.filter(p => 
-        p.company.toLowerCase().includes(searchCompany.toLowerCase())
+        p.name.toLowerCase().includes(searchLower) ||
+        p.company.toLowerCase().includes(searchLower) ||
+        (p.type && p.type.toLowerCase().includes(searchLower))
       );
     }
     
     setFilteredProducts(filtered);
-  }, [searchTerm, searchCompany, products]);
+  }, [searchTerm, products]);
 
   // Extract unique companies
   useEffect(() => {
     const uniqueCompanies = [...new Set(products.map(p => p.company))].sort();
     setCompanies(uniqueCompanies);
   }, [products]);
-
-  // Filter companies for autocomplete
-  useEffect(() => {
-    if (formData.company) {
-      const filtered = companies.filter(c => 
-        c.toLowerCase().includes(formData.company.toLowerCase())
-      );
-      setFilteredCompanies(filtered);
-    } else {
-      setFilteredCompanies(companies);
-    }
-  }, [formData.company, companies]);
 
   // Get auth headers
   const getAuthHeaders = () => {
@@ -242,7 +231,10 @@ function App() {
     }
   };
 
-  const handleQuantityUpdate = async (newQuantity) => {
+  const handleQuantityUpdate = async () => {
+    const adjustment = parseInt(quantityAdjustment) || 0;
+    const newQuantity = Math.max(0, selectedProduct.quantity + adjustment);
+    
     try {
       const response = await fetch(`${API_URL}/products/${selectedProduct._id}/quantity`, {
         method: 'PATCH',
@@ -258,6 +250,7 @@ function App() {
       await fetchProducts();
       setShowQuantityModal(false);
       setSelectedProduct(null);
+      setQuantityAdjustment(0);
     } catch (error) {
       console.error('Error updating quantity:', error);
       alert('Error updating quantity');
@@ -323,16 +316,17 @@ function App() {
     setFormData({
       name: product.name,
       quantity: product.quantity,
-      price: product.price,
+      price: product.price || '',
       company: product.company,
-      type: product.type,
-      description: product.description
+      type: product.type || '',
+      description: product.description || ''
     });
     setShowEditModal(true);
   };
 
   const openQuantityModal = (product) => {
     setSelectedProduct(product);
+    setQuantityAdjustment(0);
     setShowQuantityModal(true);
   };
 
@@ -346,12 +340,6 @@ function App() {
       description: ''
     });
     setSelectedProduct(null);
-    setShowCompanySuggestions(false);
-  };
-
-  const selectCompany = (company) => {
-    setFormData({ ...formData, company });
-    setShowCompanySuggestions(false);
   };
 
   // Show loading screen
@@ -376,7 +364,10 @@ function App() {
           <div className="header-content">
             <h1>📦 Credence Inventory System</h1>
             <div className="user-info">
-              <span className="user-name">👤 {user?.name || user?.username}</span>
+              <span className="user-name">
+                👤 {user?.name || user?.username}
+                {isViewOnly && <span className="badge-viewer"> (View Only)</span>}
+              </span>
               <button className="btn-logout" onClick={handleLogout}>
                 Logout
               </button>
@@ -388,27 +379,22 @@ function App() {
           <div className="search-section">
             <input
               type="text"
-              placeholder="🔍 Search by product name..."
+              placeholder="🔍 Search by product name, company, or type..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="search-input"
-            />
-            <input
-              type="text"
-              placeholder="🏢 Search by company..."
-              value={searchCompany}
-              onChange={(e) => setSearchCompany(e.target.value)}
               className="search-input"
             />
           </div>
 
           <div className="action-buttons">
-            <button 
-              className="btn btn-primary"
-              onClick={() => setShowAddModal(true)}
-            >
-              ➕ Add Product
-            </button>
+            {!isViewOnly && (
+              <button 
+                className="btn btn-primary"
+                onClick={() => setShowAddModal(true)}
+              >
+                ➕ Add Product
+              </button>
+            )}
             <button 
               className="btn btn-success"
               onClick={() => handleExport()}
@@ -451,13 +437,13 @@ function App() {
                 <th>Company</th>
                 <th>Type</th>
                 <th>Description</th>
-                <th>Actions</th>
+                {!isViewOnly && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="no-data">No products found</td>
+                  <td colSpan={isViewOnly ? "6" : "7"} className="no-data">No products found</td>
                 </tr>
               ) : (
                 filteredProducts.map(product => (
@@ -468,33 +454,39 @@ function App() {
                         {product.quantity}
                       </span>
                     </td>
-                    <td className="price">₹{product.price.toLocaleString()}</td>
-                    <td>{product.company}</td>
-                    <td><span className="type-badge">{product.type}</span></td>
-                    <td className="description">{product.description || '-'}</td>
-                    <td className="actions">
-                      <button
-                        className="btn btn-icon"
-                        onClick={() => openQuantityModal(product)}
-                        title="Update Quantity"
-                      >
-                        📦
-                      </button>
-                      <button
-                        className="btn btn-icon"
-                        onClick={() => openEditModal(product)}
-                        title="Edit"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        className="btn btn-icon btn-danger"
-                        onClick={() => handleDeleteProduct(product._id)}
-                        title="Delete"
-                      >
-                        🗑️
-                      </button>
+                    <td className="price">
+                      {product.price ? `₹${product.price.toLocaleString()}` : '-'}
                     </td>
+                    <td>{product.company || '-'}</td>
+                    <td>
+                      {product.type ? <span className="type-badge">{product.type}</span> : '-'}
+                    </td>
+                    <td className="description">{product.description || '-'}</td>
+                    {!isViewOnly && (
+                      <td className="actions">
+                        <button
+                          className="btn btn-icon"
+                          onClick={() => openQuantityModal(product)}
+                          title="Update Quantity"
+                        >
+                          📦
+                        </button>
+                        <button
+                          className="btn btn-icon"
+                          onClick={() => openEditModal(product)}
+                          title="Edit"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          className="btn btn-icon btn-danger"
+                          onClick={() => handleDeleteProduct(product._id)}
+                          title="Delete"
+                        >
+                          🗑️
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -536,13 +528,12 @@ function App() {
                     />
                   </div>
                   <div className="form-group">
-                    <label>Price (₹) *</label>
+                    <label>Price (₹)</label>
                     <input
                       type="number"
                       name="price"
                       value={formData.price}
                       onChange={handleInputChange}
-                      required
                       min="0"
                       step="0.01"
                       placeholder="0.00"
@@ -550,40 +541,27 @@ function App() {
                   </div>
                 </div>
                 <div className="form-row">
-                  <div className="form-group autocomplete-container">
-                    <label>Company * <span className="hint">(Type to see suggestions)</span></label>
-                    <input
-                      type="text"
+                  <div className="form-group">
+                    <label>Company</label>
+                    <select
                       name="company"
                       value={formData.company}
                       onChange={handleInputChange}
-                      onFocus={() => setShowCompanySuggestions(true)}
-                      required
-                      placeholder="Enter or select company"
-                      autoComplete="off"
-                    />
-                    {showCompanySuggestions && filteredCompanies.length > 0 && (
-                      <div className="suggestions-dropdown">
-                        {filteredCompanies.map((company, index) => (
-                          <div
-                            key={index}
-                            className="suggestion-item"
-                            onClick={() => selectCompany(company)}
-                          >
-                            {company}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                      className="select-input"
+                    >
+                      <option value="">Select Company</option>
+                      {COMPANY_OPTIONS.map(company => (
+                        <option key={company} value={company}>{company}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="form-group">
-                    <label>Product Type *</label>
+                    <label>Product Type</label>
                     <input
                       type="text"
                       name="type"
                       value={formData.type}
                       onChange={handleInputChange}
-                      required
                       placeholder="e.g., Electronics"
                     />
                   </div>
@@ -644,52 +622,39 @@ function App() {
                     />
                   </div>
                   <div className="form-group">
-                    <label>Price (₹) *</label>
+                    <label>Price (₹)</label>
                     <input
                       type="number"
                       name="price"
                       value={formData.price}
                       onChange={handleInputChange}
-                      required
                       min="0"
                       step="0.01"
                     />
                   </div>
                 </div>
                 <div className="form-row">
-                  <div className="form-group autocomplete-container">
-                    <label>Company * <span className="hint">(Type to see suggestions)</span></label>
-                    <input
-                      type="text"
+                  <div className="form-group">
+                    <label>Company</label>
+                    <select
                       name="company"
                       value={formData.company}
                       onChange={handleInputChange}
-                      onFocus={() => setShowCompanySuggestions(true)}
-                      required
-                      autoComplete="off"
-                    />
-                    {showCompanySuggestions && filteredCompanies.length > 0 && (
-                      <div className="suggestions-dropdown">
-                        {filteredCompanies.map((company, index) => (
-                          <div
-                            key={index}
-                            className="suggestion-item"
-                            onClick={() => selectCompany(company)}
-                          >
-                            {company}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                      className="select-input"
+                    >
+                      <option value="">Select Company</option>
+                      {COMPANY_OPTIONS.map(company => (
+                        <option key={company} value={company}>{company}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="form-group">
-                    <label>Product Type *</label>
+                    <label>Product Type</label>
                     <input
                       type="text"
                       name="type"
                       value={formData.type}
                       onChange={handleInputChange}
-                      required
                     />
                   </div>
                 </div>
@@ -717,58 +682,39 @@ function App() {
 
         {/* Quantity Update Modal */}
         {showQuantityModal && selectedProduct && (
-          <div className="modal-overlay" onClick={() => setShowQuantityModal(false)}>
+          <div className="modal-overlay" onClick={() => { setShowQuantityModal(false); setQuantityAdjustment(0); }}>
             <div className="modal modal-small" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
                 <h2>Update Quantity</h2>
-                <button className="close-btn" onClick={() => setShowQuantityModal(false)}>×</button>
+                <button className="close-btn" onClick={() => { setShowQuantityModal(false); setQuantityAdjustment(0); }}>×</button>
               </div>
               <div className="quantity-update">
                 <h3>{selectedProduct.name}</h3>
-                <p>Current Quantity: <strong>{selectedProduct.quantity}</strong></p>
-                <div className="quantity-controls">
-                  <button
-                    className="btn btn-icon-large"
-                    onClick={() => handleQuantityUpdate(Math.max(0, selectedProduct.quantity - 10))}
-                  >
-                    -10
-                  </button>
-                  <button
-                    className="btn btn-icon-large"
-                    onClick={() => handleQuantityUpdate(Math.max(0, selectedProduct.quantity - 1))}
-                  >
-                    -1
-                  </button>
+                <p>Current Stock: <strong>{selectedProduct.quantity}</strong></p>
+                <div className="adjustment-section">
+                  <label>Adjustment Amount:</label>
+                  <p className="hint-text">Enter positive number to add stock, negative to reduce</p>
                   <input
                     type="number"
                     className="quantity-input"
-                    value={selectedProduct.quantity}
-                    onChange={(e) => setSelectedProduct({...selectedProduct, quantity: parseInt(e.target.value) || 0})}
-                    min="0"
+                    value={quantityAdjustment}
+                    onChange={(e) => setQuantityAdjustment(e.target.value)}
+                    placeholder="0"
                   />
-                  <button
-                    className="btn btn-icon-large"
-                    onClick={() => handleQuantityUpdate(selectedProduct.quantity + 1)}
-                  >
-                    +1
-                  </button>
-                  <button
-                    className="btn btn-icon-large"
-                    onClick={() => handleQuantityUpdate(selectedProduct.quantity + 10)}
-                  >
-                    +10
-                  </button>
+                  <p className="preview-text">
+                    New Stock: <strong>{Math.max(0, selectedProduct.quantity + (parseInt(quantityAdjustment) || 0))}</strong>
+                  </p>
                 </div>
                 <div className="modal-footer">
                   <button 
                     className="btn btn-secondary" 
-                    onClick={() => setShowQuantityModal(false)}
+                    onClick={() => { setShowQuantityModal(false); setQuantityAdjustment(0); }}
                   >
                     Cancel
                   </button>
                   <button 
                     className="btn btn-primary"
-                    onClick={() => handleQuantityUpdate(selectedProduct.quantity)}
+                    onClick={handleQuantityUpdate}
                   >
                     Save
                   </button>

@@ -52,7 +52,8 @@ async function addUser(username, password, name, role = 'user') {
 
 // Add default admin user
 // Change these credentials as needed
-addUser('admin', 'abhaybhai', 'Administrator', 'admin');
+// addUser('admin', 'abhaybhai', 'Administrator', 'admin');
+addUser('user', 'user', 'View User', 'viewer');
 
 // You can add more users by uncommenting and modifying below:
 // addUser('user1', 'password123', 'John Doe', 'user');
